@@ -3,7 +3,7 @@
 all: symbol_table
 
 symbol_table:
-	gcc -o symbol_table.o symbol_table.c
+	gcc -g -o symbol_table.o symbol_table.c
 
 
 .PHONY: clean

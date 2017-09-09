@@ -4,6 +4,9 @@
 #include <unistd.h>
 #include <string.h>
 
+/* TODO: REMOVE THIS */
+#include <assert.h>
+
 /* the maximum token size */
 #define MAX_TOKEN_SIZE 255
 #define MAX_BUFFER_SIZE 500
@@ -41,8 +44,8 @@ typedef struct symbol_table_struct {
 
 
 /* function declarations */
-char* get_token(const FILE *file);
-void delete_token(char* token);
+char* get_token(FILE* file);
+entry_t* get_entry(FILE* file);
 
 entry_t* symbol_table_insert(symbol_table_t* symbol_table, entry_t entry);
 entry_t* symbol_table_lookup(const symbol_table_t* symbol_table, char* name);
@@ -54,7 +57,7 @@ symbol_table_t* symbol_table_exit_scope(const symbol_table_t* symbol_table);
 int main(int argc, char *argv[])
 {
     int is_eof = 0;
-    char *token = NULL;
+    entry_t *token = NULL;
     FILE *source = NULL;
 
     /* Check if a file was passed as an argument */
@@ -70,20 +73,10 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-
     /* Loop through the file till eof */
-    while (!is_eof) {
-
-        /* Get the next token */
-        token = get_token(source);
-        if (token == NULL) {
-            is_eof = 1;
-            break;
-        }
-
-        printf("%s\n", token);
+    while (!feof(source)) {
+        assert(0);
     }
-
 
     /* Close the file */
     fclose(source);
@@ -99,19 +92,89 @@ int main(int argc, char *argv[])
  * @param fd File descriptor
  * @return char* The next token
  */
-char* get_token(const FILE *file)
+char* get_token(FILE* file)
 {
-    return NULL;
+    char buf[1];
+    char temp_token[MAX_BUFFER_SIZE];
+    char *token = NULL;
+    int i = 0;
+
+    /* return null if end of file */
+    if (feof(file)) {
+        return NULL;
+    }
+
+    while (i < MAX_BUFFER_SIZE || feof(file)) {
+
+        /* read a character from the file */
+        fscanf(file, "%c", &buf);
+        if (buf[0] == 0) {
+            return NULL;
+        }
+
+
+        /* if character if space, tab or newline */
+        if (buf[0] == 32 || buf[0] == 9 || buf[0] == 10) {
+            if (i == 0) {
+                /* ignore if nothing is read */
+                continue;
+            } else {
+                /* else send it */
+                break;
+                i++;
+            }
+        }
+        /* if a special character is read */
+        else if (buf[0] == '{'
+                || buf[0] == '}'
+                || buf[0] == '('
+                || buf[0] == ')'
+                || buf[0] == '['
+                || buf[0] == ']'
+                || buf[0] == '<'
+                || buf[0] == '>'
+                || buf[0] == '!'
+                || buf[0] == '='
+                || buf[0] == '|'
+                || buf[0] == '.'
+                || buf[0] == '*'
+                || buf[0] == ';'
+                || buf[0] == '-'
+                || buf[0] == '/'
+                || buf[0] == '+'
+                || buf[0] == ',')
+        {
+            if (i == 0) {
+                /* send it as a token if nothing is read */
+                temp_token[0] = buf[0];
+                i++;
+            } else {
+                /* rewind the file the send the token that was being read */
+                fseek(file, -1, SEEK_CUR);
+            }
+            break;
+        }
+
+        temp_token[i] = buf[0];
+        i++;
+    }
+
+    /* append the null character and send the token */
+    temp_token[i] = '\0';
+    token = (char *) malloc(strlen(temp_token) * sizeof(char));
+    strcpy(token, temp_token);
+    return token;
 }
 
 /**
- * Delete the token read and free the memory.
+ * Returns the next entry for the file descriptor and increment the file
+ * position. Returns NULL if no more tokens or error.
  *
- * @param char* Token to be deleted
+ * @param fd File descriptor
+ * @return char* The next entry in symbol table
  */
-void delete_token(char* token)
+entry_t* get_entry(FILE* file)
 {
-    free(token);
 }
 
 /**
