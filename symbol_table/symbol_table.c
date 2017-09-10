@@ -4,27 +4,29 @@
 #include <unistd.h>
 #include <string.h>
 
-/* TODO: REMOVE THIS */
-#include <assert.h>
 
 /* the maximum token size */
 #define MAX_TOKEN_SIZE 255
 #define MAX_BUFFER_SIZE 500
 
+
+int is_param = 0;
+
+
 /* the data type of identifier */
 typedef enum kind_enum {
-    VOID,
-    INT,
-    FLOAT,
-    DOUBLE
-} kind_t;
-
-/* the type of identifier */
-typedef enum type_enum {
     PARAMETER,
     VARIABLE,
     FUNCTION,
     CLASS
+} kind_t;
+
+/* the type of identifier */
+typedef enum type_enum {
+    VOID,
+    INT,
+    FLOAT,
+    DOUBLE
 } type_t;
 
 /* the symbol table entry */
@@ -32,33 +34,36 @@ typedef struct entry_struct {
     char *identifier;
     type_t type;
     kind_t kind;
+    struct entry_struct *next;
 } entry_t;
 
 /* the symbol table structure */
 typedef struct symbol_table_struct {
-    char *identifier;
-    type_t type;
-    kind_t kind;
+    struct symbol_table_struct *parent;
+    entry_t *entry_top;
 } symbol_table_t;
 
 
 
 /* function declarations */
 char* get_token(FILE* file);
-entry_t* get_entry(FILE* file);
 
 entry_t* symbol_table_insert(symbol_table_t* symbol_table, entry_t entry);
-entry_t* symbol_table_lookup(const symbol_table_t* symbol_table, char* name);
+entry_t* symbol_table_lookup(symbol_table_t* symbol_table, char* name);
 symbol_table_t* symbol_table_enter_scope(symbol_table_t* symbol_table);
-symbol_table_t* symbol_table_exit_scope(const symbol_table_t* symbol_table);
+symbol_table_t* symbol_table_exit_scope(symbol_table_t* symbol_table);
 
 
 
 int main(int argc, char *argv[])
 {
     int is_eof = 0;
-    entry_t *token = NULL;
+    int is_identifier = 0;
+    char *token = NULL;
     FILE *source = NULL;
+    symbol_table_t *table_root = NULL;
+    symbol_table_t *table = NULL;
+    entry_t entry;
 
     /* Check if a file was passed as an argument */
     if (argc <= 1) {
@@ -73,9 +78,77 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
+    /* Initialize the root of the table */
+    table_root = symbol_table_enter_scope(NULL);
+    table = table_root;
+
+
     /* Loop through the file till eof */
     while (!feof(source)) {
-        assert(0);
+
+        /* get a token */
+        token = get_token(source);
+        if (token == NULL) {
+            break;
+        }
+
+        /* if it's a keyword, ignore */
+        if (strcmp(token, "while") == 0) {
+            continue;
+        }
+
+        /* if it's a declaration/definition, add it as an entry */
+        is_identifier = 1;
+        if (strcmp(token, "void") == 0) {
+            entry.type = VOID;
+        } else if (strcmp(token, "int") == 0) {
+            entry.type = INT;
+        } else if (strcmp(token, "float") == 0) {
+            entry.type = FLOAT;
+        } else if (strcmp(token, "double") == 0) {
+            entry.type = DOUBLE;
+        } else {
+            is_identifier = 0;
+        }
+
+        if (is_identifier) {
+            token = get_token(source);
+            entry.identifier = token;
+            symbol_table_insert(table, entry);
+            continue;
+        }
+
+        /* if it's a '{' start a new scope */
+        if (strcmp(token, "{") == 0) {
+            table = symbol_table_enter_scope(table);
+            continue;
+        }
+
+        /* if it's a '}' end the current scope */
+        if (strcmp(token, "}") == 0) {
+            table = symbol_table_exit_scope(table);
+            continue;
+        }
+
+        /* if it's a '(' following entries are params */
+        if (strcmp(token, "(") == 0) {
+            is_param++;
+            continue;
+        }
+
+        /* if it's a ')' following entries are not params */
+        if (strcmp(token, ")") == 0) {
+            is_param--;
+            continue;
+        }
+
+        /* if it's a use, lookup in the symbol table */
+        if (token[0] > 'A' && token[0] < 'z') {
+            if(symbol_table_lookup(table, token) == NULL) {
+                fprintf(stderr, "Could not find '%s' in scope\n", token);
+            }
+        }
+
     }
 
     /* Close the file */
@@ -104,11 +177,10 @@ char* get_token(FILE* file)
         return NULL;
     }
 
-    while (i < MAX_BUFFER_SIZE || feof(file)) {
+    while (i < MAX_BUFFER_SIZE && !feof(file)) {
 
         /* read a character from the file */
-        fscanf(file, "%c", &buf);
-        if (buf[0] == 0) {
+        if (!fscanf(file, "%c", &buf)) {
             return NULL;
         }
 
@@ -123,6 +195,12 @@ char* get_token(FILE* file)
                 break;
                 i++;
             }
+        }
+        /* if it's a preprocessor directive, ignore */
+        else if (buf[0] == '#') {
+            char temp[200];
+            fscanf(file, "%s", &temp);
+            fscanf(file, "%s", &temp);
         }
         /* if a special character is read */
         else if (buf[0] == '{'
@@ -167,17 +245,6 @@ char* get_token(FILE* file)
 }
 
 /**
- * Returns the next entry for the file descriptor and increment the file
- * position. Returns NULL if no more tokens or error.
- *
- * @param fd File descriptor
- * @return char* The next entry in symbol table
- */
-entry_t* get_entry(FILE* file)
-{
-}
-
-/**
  * Insert entry if not already in the current scope. Error if a symbole of the
  * same name is already present in the current scope
  *
@@ -187,7 +254,33 @@ entry_t* get_entry(FILE* file)
  */
 entry_t* symbol_table_insert(symbol_table_t* symbol_table, entry_t entry)
 {
-    return NULL;
+    entry_t *new_entry = NULL;
+    entry_t *cursor = NULL;
+
+    new_entry = (entry_t *) malloc(sizeof(entry));
+    if (new_entry == NULL) {
+        return NULL;
+    }
+    new_entry -> type = entry.type;
+    new_entry -> kind = entry.kind;
+    new_entry -> identifier = entry.identifier;
+    new_entry -> next = NULL;
+
+    cursor = symbol_table -> entry_top;
+
+    /* if it's the first entry, insert and return */
+    if (cursor == NULL) {
+        symbol_table -> entry_top = new_entry;
+        return new_entry;
+    }
+
+    /* go to the last entry and insert */
+    while (cursor -> next != NULL) {
+        cursor = cursor -> next;
+    }
+
+    cursor -> next = new_entry;
+    return new_entry;
 }
 
 /**
@@ -198,9 +291,26 @@ entry_t* symbol_table_insert(symbol_table_t* symbol_table, entry_t entry)
  * @param char* The name of the identifier
  * @return entry_t* The pointer to the symbol table entry. NULL if not found.
  */
-entry_t* symbol_table_lookup(const symbol_table_t* symbol_table, char* name)
+entry_t* symbol_table_lookup(symbol_table_t* symbol_table, char* name)
 {
-    return NULL;
+    symbol_table_t *table = NULL;
+    entry_t *entry = NULL;
+
+    if (symbol_table == NULL) {
+        return NULL;
+    }
+
+    table = symbol_table;
+    entry = symbol_table -> entry_top;
+
+    while (entry != NULL) {
+        if (strcmp(entry -> identifier, name) == 0) {
+            return entry;
+        }
+        entry = entry -> next;
+    }
+
+    return symbol_table_lookup(table -> parent, name);
 }
 
 /**
@@ -211,7 +321,13 @@ entry_t* symbol_table_lookup(const symbol_table_t* symbol_table, char* name)
  */
 symbol_table_t* symbol_table_enter_scope(symbol_table_t* symbol_table)
 {
-    return NULL;
+    symbol_table_t *new_table = NULL;
+
+    new_table = (symbol_table_t *) malloc(sizeof(symbol_table_t));
+    new_table -> parent = symbol_table;
+    new_table -> entry_top = NULL;
+
+    return new_table;
 }
 
 /**
@@ -221,7 +337,12 @@ symbol_table_t* symbol_table_enter_scope(symbol_table_t* symbol_table)
  * @return symbol_table_t* The pointer to the parent symbol table. NULL if not
  *      found
  */
-symbol_table_t* symbol_table_exit_scope(const symbol_table_t* symbol_table)
+symbol_table_t* symbol_table_exit_scope(symbol_table_t* symbol_table)
 {
-    return NULL;
+    symbol_table_t *parent;
+
+    parent = symbol_table -> parent;
+    free(symbol_table);
+
+    return parent;
 }
