@@ -12,6 +12,7 @@
 
 int is_param = 0;
 int is_func = 0;
+int scope_level = 0;
 
 
 /* the data type of identifier */
@@ -141,6 +142,14 @@ int main(int argc, char *argv[])
             }
 
             entry.identifier = token;
+            
+            /* check if there's a identifier with the same name in the local
+             * scope */
+            scope_level = 0;
+            if (symbol_table_lookup(table, token) && !scope_level) {
+                fprintf(stderr, "'%s' is already defined/declared\n", token);
+                num_of_errors++;
+            }
             symbol_table_insert(table, entry);
             continue;
         }
@@ -421,6 +430,9 @@ entry_t* symbol_table_lookup(symbol_table_t* symbol_table, char* name)
         }
         entry = entry -> next;
     }
+
+    /* increment the scope level if searching in parent */
+    scope_level++;
 
     return symbol_table_lookup(table -> parent, name);
 }
