@@ -1,3 +1,20 @@
+/*
+ * This program takes a very basic C program as input and checks the code for
+ * scope conflicts. It supports the primitive data types:
+ *   void
+ *   char
+ *   int
+ *   float
+ *   double
+ *   and all pointers of these types
+ * There is no support for arrays, structures, unions, enums etc.
+ *
+ * It can also differentiate between functions, parameters and variables
+ *
+ * author: Utkarsh Maheshwari <utkarshme96@gmail.com>
+ * date  : September, 2017
+ *
+ */
 #include <stdio.h>
 #include <stdlib.h>
 #include <fcntl.h>
