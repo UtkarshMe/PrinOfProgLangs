@@ -19,8 +19,7 @@ int scope_level = 0;
 typedef enum kind_enum {
     PARAMETER,
     VARIABLE,
-    FUNCTION,
-    CLASS
+    FUNCTION
 } kind_t;
 
 /* the type of identifier */
@@ -133,6 +132,7 @@ int main(int argc, char *argv[])
 
         if (is_identifier) {
             int is_pointer = 0;
+            char *next = NULL;
 
             token = get_token(source);
             if (token[0] == '*') {
@@ -142,31 +142,32 @@ int main(int argc, char *argv[])
             }
 
             entry.identifier = token;
+
+            /* check if the params are being parsed */
+            if (is_param) {
+                entry.kind = PARAMETER;
+            } else {
+                entry.kind = VARIABLE;
+            }
+
+            /* get the next token to check if it's a fuction */
+            next = get_token(source);
+            if (token[0] == '(') {
+                entry.kind = FUNCTION;
+            }
             
             /* check if there's a identifier with the same name in the local
-             * scope */
+             * scope. if not, add it */
             scope_level = 0;
             if (symbol_table_lookup(table, token) && !scope_level) {
                 fprintf(stderr, "'%s' is already defined/declared\n", token);
                 num_of_errors++;
+            } else {
+                symbol_table_insert(table, entry);
             }
-            symbol_table_insert(table, entry);
-            continue;
-        }
 
-        /* if it's a '{' start a new scope */
-        if (strcmp(token, "{") == 0) {
-            if (!is_func) {
-                table = symbol_table_enter_scope(table);
-                is_func = 0;
-            }
-            continue;
-        }
-
-        /* if it's a '}' end the current scope */
-        if (strcmp(token, "}") == 0) {
-            table = symbol_table_exit_scope(table);
-            continue;
+            /* continue parsing with the next token */
+            token = next;
         }
 
         /* if it's a '(' following entries are params */
@@ -186,6 +187,21 @@ int main(int argc, char *argv[])
         /* if it's a ')' following entries are not params */
         if (strcmp(token, ")") == 0) {
             is_param--;
+            continue;
+        }
+
+        /* if it's a '{' start a new scope */
+        if (strcmp(token, "{") == 0) {
+            if (!is_func) {
+                table = symbol_table_enter_scope(table);
+                is_func = 0;
+            }
+            continue;
+        }
+
+        /* if it's a '}' end the current scope */
+        if (strcmp(token, "}") == 0) {
+            table = symbol_table_exit_scope(table);
             continue;
         }
 
