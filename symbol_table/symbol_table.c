@@ -11,6 +11,7 @@
 
 
 int is_param = 0;
+int is_func = 0;
 
 
 /* the data type of identifier */
@@ -24,9 +25,15 @@ typedef enum kind_enum {
 /* the type of identifier */
 typedef enum type_enum {
     VOID,
+    CHAR,
     INT,
     FLOAT,
-    DOUBLE
+    DOUBLE,
+    POINTER_VOID,
+    POINTER_INT,
+    POINTER_FLOAT,
+    POINTER_CHAR,
+    POINTER_DOUBLE
 } type_t;
 
 /* the symbol table entry */
@@ -59,6 +66,7 @@ int main(int argc, char *argv[])
 {
     int is_eof = 0;
     int is_identifier = 0;
+    int num_of_errors = 0;
     char *token = NULL;
     FILE *source = NULL;
     symbol_table_t *table_root = NULL;
@@ -93,7 +101,16 @@ int main(int argc, char *argv[])
         }
 
         /* if it's a keyword, ignore */
-        if (strcmp(token, "while") == 0) {
+        if (strcmp(token, "while") == 0
+                || strcmp(token, "if") == 0
+                || strcmp(token, "do") == 0
+                || strcmp(token, "else") == 0
+                || strcmp(token, "return") == 0
+                || strcmp(token, "sizeof") == 0
+                || strcmp(token, "NULL") == 0
+                || strcmp(token, "break") == 0
+                || strcmp(token, "continue") == 0
+                || strcmp(token, "for") == 0) {
             continue;
         }
 
@@ -101,6 +118,8 @@ int main(int argc, char *argv[])
         is_identifier = 1;
         if (strcmp(token, "void") == 0) {
             entry.type = VOID;
+        } else if (strcmp(token, "char") == 0) {
+            entry.type = CHAR;
         } else if (strcmp(token, "int") == 0) {
             entry.type = INT;
         } else if (strcmp(token, "float") == 0) {
@@ -112,7 +131,15 @@ int main(int argc, char *argv[])
         }
 
         if (is_identifier) {
+            int is_pointer = 0;
+
             token = get_token(source);
+            if (token[0] == '*') {
+                is_pointer = 1;
+                entry.type = entry.type += POINTER_VOID - VOID;
+                token = get_token(source);
+            }
+
             entry.identifier = token;
             symbol_table_insert(table, entry);
             continue;
@@ -120,7 +147,10 @@ int main(int argc, char *argv[])
 
         /* if it's a '{' start a new scope */
         if (strcmp(token, "{") == 0) {
-            table = symbol_table_enter_scope(table);
+            if (!is_func) {
+                table = symbol_table_enter_scope(table);
+                is_func = 0;
+            }
             continue;
         }
 
@@ -132,7 +162,15 @@ int main(int argc, char *argv[])
 
         /* if it's a '(' following entries are params */
         if (strcmp(token, "(") == 0) {
+
+            /* incrementing is_param rather than equating to 0 so that brackets
+             * can be accepted in the arguments for resolution */
             is_param++;
+
+            /* parameters are in the scope of the function, so enter a new
+             * scope and ignore the next '{' */
+            table = symbol_table_enter_scope(table);
+            is_func = 1;
             continue;
         }
 
@@ -142,18 +180,34 @@ int main(int argc, char *argv[])
             continue;
         }
 
+        /* if it's a '[' or ']', ignore (for now) */
+        if (strcmp(token, "[") == 0 || strcmp(token, "]") == 0) {
+            continue;
+        }
+
         /* if it's a use, lookup in the symbol table */
         if (token[0] > 'A' && token[0] < 'z') {
             if(symbol_table_lookup(table, token) == NULL) {
                 fprintf(stderr, "Could not find '%s' in scope\n", token);
+                num_of_errors++;
             }
         }
 
     }
 
+    /* delete root table and free memory */
+    table = symbol_table_exit_scope(table);
+
+
     /* Close the file */
     fclose(source);
 
+    if (num_of_errors) {
+        fprintf(stderr, "\nThe program found %d errors\n", num_of_errors);
+        exit(1);
+    }
+
+    fprintf(stderr, "No errors in scope found.\n");
     return 0;
 }
 
@@ -196,11 +250,69 @@ char* get_token(FILE* file)
                 i++;
             }
         }
+        /* if it's a comment, ignore */
+        else if (buf[0] == '/') {
+            char temp[200];
+            fscanf(file, "%c", &temp);
+            /* it's a single line comment */
+            if (temp[0] == '/') {
+                while (!feof(file)) {
+                    fscanf(file, "%c", &temp);
+                    if (temp[0] == 10) {
+                        break;
+                    }
+                }
+                i = 0;
+                continue;
+            /* it's a multiline comment */
+            } else if (temp[0] == '*') {
+                while (!feof(file) && fscanf(file, "%c", &temp)) {
+                    if (temp[0] == '*'
+                            && fscanf(file, "%c", &temp)
+                            && temp[0] == '/') {
+                        break;
+                    }
+                }
+                i = 0;
+                continue;
+            /* not a comment */
+            } else {
+                buf[0] = '/';
+                fseek(file, -1, SEEK_CUR);
+                break;
+            }
+            fscanf(file, "%s", &temp);
+            fscanf(file, "%s", &temp);
+        }
         /* if it's a preprocessor directive, ignore */
         else if (buf[0] == '#') {
             char temp[200];
             fscanf(file, "%s", &temp);
             fscanf(file, "%s", &temp);
+        }
+        /* if it's a string, send as a whole */
+        else if (buf[0] == '"') {
+            temp_token[i] = buf[0];
+            i++;
+
+            /* scan till the matching quotes */
+            while (!feof(file)) {
+                fscanf(file, "%c", &buf);
+
+                if (buf[0] == '\\') {
+                    /* take care of escape sequence */
+                    fscanf(file, "%c", &buf);
+                } else if (buf[0] == '"') {
+                    break;
+                } else {
+                    temp_token[i] = buf[0];
+                    i++;
+                }
+            }
+
+            temp_token[i] = buf[0];
+            i++;
+            break;
         }
         /* if a special character is read */
         else if (buf[0] == '{'
